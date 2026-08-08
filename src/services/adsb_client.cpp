@@ -5,9 +5,11 @@
 
 #include <ArduinoJson.h>
 
+#include <cmath>
 #include <cstring>
 
 #include "config.h"
+#include "ui/radar_range.h"
 
 namespace services::adsb {
 
@@ -15,6 +17,7 @@ namespace {
 
 constexpr char kApiBase[] = "https://opendata.adsb.fi/api/v3/lat/";
 constexpr float kKmPerNm = 1.852f;
+constexpr float kMetersPerFoot = 0.3048f;
 constexpr int kConnectAttemptMs = 200;
 constexpr unsigned long kRequestTimeoutMs = 10000;
 
@@ -180,10 +183,23 @@ void formatAltitudeTag(const JsonObject& plane, char* out, size_t out_len) {
     }
   }
 
-  float alt = 0.0f;
-  if (readJsonFloat(plane, "alt_baro", &alt) ||
-      readJsonFloat(plane, "alt_geom", &alt)) {
-    snprintf(out, out_len, "%d ft", static_cast<int>(lroundf(alt)));
+  // The feed always reports altitude in feet.
+  float alt_ft = 0.0f;
+  if (!readJsonFloat(plane, "alt_baro", &alt_ft) &&
+      !readJsonFloat(plane, "alt_geom", &alt_ft)) {
+    return;
+  }
+
+  if (ui::radar::useMiles()) {
+    snprintf(out, out_len, "%d ft", static_cast<int>(lroundf(alt_ft)));
+    return;
+  }
+
+  const float alt_m = alt_ft * kMetersPerFoot;
+  if (fabsf(alt_m) < 1000.0f) {
+    snprintf(out, out_len, "%d m", static_cast<int>(lroundf(alt_m)));
+  } else {
+    snprintf(out, out_len, "%.1f km", static_cast<double>(alt_m) / 1000.0);
   }
 }
 

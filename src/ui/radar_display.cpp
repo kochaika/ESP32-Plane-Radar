@@ -10,12 +10,12 @@
 #include "hardware/display.h"
 #include "hardware/display_font.h"
 #include "services/adsb_client.h"
-#include "services/radar_location.h"
+#include "ui/radar_projection.h"
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 #include "ui/runway_overlay.h"
 
-namespace fonts = lgfx::v1::fonts;
+// `fonts::` comes from lgfx_fonts.hpp, which declares a global `namespace fonts`.
 
 namespace ui {
 namespace radar {
@@ -199,36 +199,11 @@ void initPalette() {
                                           radar::kRunwayLabelB);
 }
 
-constexpr float kKmPerDeg = 111.0f;
-
-void offsetKmFromCenter(float lat, float lon, float* dx_km, float* dy_km,
-                        float* dist_km) {
-  *dx_km =
-      static_cast<float>(lon - services::location::lon()) * kKmPerDeg;
-  *dy_km =
-      static_cast<float>(lat - services::location::lat()) * kKmPerDeg;
-  *dist_km = sqrtf((*dx_km) * (*dx_km) + (*dy_km) * (*dy_km));
-}
-
 float innerRingMaxKm() {
   const float outer_km = radar::rangeCurrent().outer_km;
   return outer_km * (static_cast<float>(radar::kGridOuterRadius -
                                        radar::kAircraftInsideRingInsetPx) /
                      static_cast<float>(radar::kGridOuterRadius));
-}
-
-/** Flat lat/lon as x/y: 1° ≈ 111 km, north = screen up. */
-void latLonToScreen(float lat, float lon, int* out_x, int* out_y) {
-  const float outer_km = radar::rangeCurrent().outer_km;
-  const float px_per_km = static_cast<float>(radar::kGridOuterRadius) / outer_km;
-
-  float dx_km = 0.0f;
-  float dy_km = 0.0f;
-  float dist_km = 0.0f;
-  offsetKmFromCenter(lat, lon, &dx_km, &dy_km, &dist_km);
-
-  *out_x = radar::kCenterX + static_cast<int>(lroundf(dx_km * px_per_km));
-  *out_y = radar::kCenterY - static_cast<int>(lroundf(dy_km * px_per_km));
 }
 
 bool isInsideOuterRingKm(float dist_km) { return dist_km <= innerRingMaxKm(); }
@@ -249,7 +224,7 @@ bool beyondRingEdgeDotFromLatLon(float lat, float lon, int* out_x, int* out_y) {
   float dx_km = 0.0f;
   float dy_km = 0.0f;
   float dist_km = 0.0f;
-  offsetKmFromCenter(lat, lon, &dx_km, &dy_km, &dist_km);
+  radar::offsetKmFromCenter(lat, lon, &dx_km, &dy_km, &dist_km);
   if (dist_km < 0.01f) {
     return false;
   }
@@ -260,10 +235,13 @@ bool beyondRingEdgeDotFromLatLon(float lat, float lon, int* out_x, int* out_y) {
   const int cx = radar::kCenterX;
   const int cy = radar::kCenterY;
   const int rim_r = radar::kCenterX - radar::kBeyondRingScreenMarginPx;
-  const float angle_rad = atan2f(dx_km, dy_km);
 
-  *out_x = cx + static_cast<int>(lroundf(sinf(angle_rad) * rim_r));
-  *out_y = cy - static_cast<int>(lroundf(cosf(angle_rad) * rim_r));
+  float x_km = 0.0f;
+  float y_km = 0.0f;
+  radar::rotateKmToScreenFrame(dx_km, dy_km, &x_km, &y_km);
+
+  *out_x = cx + static_cast<int>(lroundf(x_km / dist_km * rim_r));
+  *out_y = cy - static_cast<int>(lroundf(y_km / dist_km * rim_r));
   return true;
 }
 
@@ -320,14 +298,14 @@ int speedLineLengthPx(float gs_knots) {
 
 void noseTip(int cx, int cy, float heading_deg, int* tip_x, int* tip_y) {
   constexpr float kDegToRad = 0.01745329252f;
-  const float rad = heading_deg * kDegToRad;
+  const float rad = radar::screenBearingDeg(heading_deg) * kDegToRad;
   *tip_x = cx + static_cast<int>(lroundf(sinf(rad) * radar::kAircraftNoseLenPx));
   *tip_y = cy - static_cast<int>(lroundf(cosf(rad) * radar::kAircraftNoseLenPx));
 }
 
 void drawHeadingTriangle(int cx, int cy, float heading_deg, uint16_t color) {
   constexpr float kDegToRad = 0.01745329252f;
-  const float rad = heading_deg * kDegToRad;
+  const float rad = radar::screenBearingDeg(heading_deg) * kDegToRad;
   const float sin_h = sinf(rad);
   const float cos_h = cosf(rad);
 
@@ -359,7 +337,7 @@ void drawSpeedVector(int cx, int cy, float heading_deg, float track_deg,
   noseTip(cx, cy, heading_deg, &tip_x, &tip_y);
 
   constexpr float kDegToRad = 0.01745329252f;
-  const float rad = track_deg * kDegToRad;
+  const float rad = radar::screenBearingDeg(track_deg) * kDegToRad;
   int ex = tip_x + static_cast<int>(lroundf(sinf(rad) * len));
   int ey = tip_y - static_cast<int>(lroundf(cosf(rad) * len));
   clipPointToOuterRing(tip_x, tip_y, &ex, &ey);
@@ -497,12 +475,13 @@ void drawAircraft() {
     float dx_km = 0.0f;
     float dy_km = 0.0f;
     float dist_km = 0.0f;
-    offsetKmFromCenter(planes[i].lat, planes[i].lon, &dx_km, &dy_km, &dist_km);
+    radar::offsetKmFromCenter(planes[i].lat, planes[i].lon, &dx_km, &dy_km,
+                              &dist_km);
 
     if (isInsideOuterRingKm(dist_km)) {
       int x = 0;
       int y = 0;
-      latLonToScreen(planes[i].lat, planes[i].lon, &x, &y);
+      radar::latLonToScreen(planes[i].lat, planes[i].lon, &x, &y);
       items[draw_count].index = i;
       items[draw_count].x = x;
       items[draw_count].y = y;
@@ -613,16 +592,33 @@ void drawCenterDot(int cx, int cy) {
   s_draw->fillSmoothCircle(cx, cy, radar::kCenterDotRadius, radar::kColorCenter);
 }
 
+/**
+ * Letter for the compass point sitting `screen_deg` clockwise from screen up.
+ * With kUpBearingDeg = 180 (south up), the top of the screen is "S".
+ */
+const char* cardinalAtScreenAngle(int screen_deg) {
+  static_assert(radar::kUpBearingDeg == 0.0f || radar::kUpBearingDeg == 90.0f ||
+                    radar::kUpBearingDeg == 180.0f ||
+                    radar::kUpBearingDeg == 270.0f,
+                "kUpBearingDeg must be a quarter turn for cardinal labels");
+  constexpr const char* kLetters[4] = {"N", "E", "S", "W"};
+  const int up = static_cast<int>(radar::kUpBearingDeg);
+  return kLetters[(((screen_deg + up) / 90) % 4 + 4) % 4];
+}
+
 void drawCardinalLabels() {
   const int cx = radar::kCenterX;
   const int cy = radar::kCenterY;
   const int edge = radar::kSize - 1;
 
-  drawCardinalLabel("N", cx, radar::kCardinalNorthOffsetY, textdatum_t::top_center);
-  drawCardinalLabel("S", cx, edge + radar::kCardinalSouthOffsetY,
+  drawCardinalLabel(cardinalAtScreenAngle(0), cx, radar::kCardinalNorthOffsetY,
+                    textdatum_t::top_center);
+  drawCardinalLabel(cardinalAtScreenAngle(180), cx,
+                    edge + radar::kCardinalSouthOffsetY,
                     textdatum_t::bottom_center);
-  drawCardinalLabel("W", 0, cy, textdatum_t::middle_left);
-  drawCardinalLabel("E", edge, cy, textdatum_t::middle_right);
+  drawCardinalLabel(cardinalAtScreenAngle(270), 0, cy, textdatum_t::middle_left);
+  drawCardinalLabel(cardinalAtScreenAngle(90), edge, cy,
+                    textdatum_t::middle_right);
 }
 
 int scaleLabelAnchorX(int cx, int outer_radius) {

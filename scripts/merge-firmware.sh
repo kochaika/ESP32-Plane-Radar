@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV="${PIOENV:-supermini}"
+ENV="${PIOENV:-xiao_c3}"
 NO_BUILD=0
 OUT="${ROOT}/release/plane-radar-merged.bin"
 
@@ -12,7 +12,7 @@ usage() {
 Usage: scripts/merge-firmware.sh [options]
 
   --no-build     Skip pio run (merge only; firmware must already be built)
-  --env NAME     PlatformIO env (default: supermini)
+  --env NAME     PlatformIO env: xiao_c3 | supermini (default: xiao_c3)
   -o PATH        Output file (default: release/plane-radar-merged.bin)
   -h, --help     Show this help
 EOF

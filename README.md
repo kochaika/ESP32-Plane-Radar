@@ -4,7 +4,19 @@
 
 **3D printed case (STL + assembly):** [MakerWorld](https://makerworld.com/en/models/2872376-esp32-plane-radar-live-ads-b-on-a-round-display#profileId-3207083) · **Firmware:** [Releases](https://github.com/MatixYo/ESP32-Plane-Radar/releases)
 
-Firmware for an **ESP32-C3 Super Mini** and a **1.28″ round GC9A01** display (240×240). Shows a circular **ADS-B radar** around your configured location, with **WiFiManager** for first-time setup.
+Firmware for an **ESP32-C3 Super Mini** or a **Seeed Studio XIAO ESP32C3**, plus a **1.28″ round GC9A01** display (240×240). Shows a circular **ADS-B radar** around your configured location, with **WiFiManager** for first-time setup.
+
+## What's different in this fork
+
+Forked from [MatixYo/ESP32-Plane-Radar](https://github.com/MatixYo/ESP32-Plane-Radar).
+
+| Change | Details |
+|--------|---------|
+| **Seeed XIAO ESP32C3 support** | The XIAO doesn't break out GPIO0/GPIO1, which upstream used for the display's RST and CS. Display pins are now `#ifndef`-guarded `PR_PIN_DISPLAY_*` macros in `include/config.h`, overridden per board from `platformio.ini`. New `xiao_c3` env (now the default); the original `supermini` env builds unchanged. See [Wiring](#wiring) |
+| **South-up radar** | The plot is rotated so bearing 180° is at the top, with all text still upright. Driven by one constant, `kUpBearingDeg` in `include/ui/radar_projection.h` (`0` = north up). The projection math, previously duplicated between the radar and runway overlay, now lives in that shared module |
+| **Metric altitude** | Aircraft tags show `457 m` / `10.7 km` instead of raw feet. Follows the units checkbox, which is relabelled **Imperial units (miles, feet)** since it now governs both distance and altitude |
+| **Range selector in the web portal** | The four range presets are also pickable from a dropdown in the setup portal, not just by cycling the BOOT button. Both write the same NVS setting |
+| **Build fix: LovyanGFX ≥ 1.2.26** | Upstream's `namespace fonts = lgfx::v1::fonts;` aliases collide with the real global `namespace fonts` that LovyanGFX added after 1.2.7, so the floating `^1.2.7` range stopped compiling. Aliases removed and the dependency floor raised |
 
 ## What it does
 
@@ -13,7 +25,7 @@ Firmware for an **ESP32-C3 Super Mini** and a **1.28″ round GC9A01** display (
 
 After Wi‑Fi is saved, the device reconnects automatically; the radar runs in the main loop with periodic ADS-B updates (~5 s).
 
-## Controls (BOOT, GPIO 9, active LOW)
+## Controls (BOOT, GPIO 9, active LOW — the onboard **B** button on the XIAO)
 
 | Action | Effect |
 |--------|--------|
@@ -42,7 +54,8 @@ The same portal runs on the setup AP and on the device’s LAN IP while connecte
 | Field | Purpose |
 |-------|---------|
 | **Latitude / Longitude** | Radar center and ADS-B query position (defaults in `config.h` until set) |
-| **Display distances in miles** | Ring scale label in **mi** instead of **km** (e.g. `6mi` vs `10km`) |
+| **Radar range** | Dropdown of the same four presets the BOOT tap cycles through; the stored one is preselected |
+| **Imperial units (miles, feet)** | Ring scale in **mi** instead of **km** (`6mi` vs `10km`), and aircraft altitude in **ft** instead of **m / km** (`35000 ft` vs `10.7 km`) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
 
 After a reset, the device reboots and shows the setup screen immediately (no “Connecting” loop on stale credentials).
@@ -66,7 +79,9 @@ Layout and colors: `include/ui/radar_theme.h`.
 | 15 km / 9 mi | ~20 km |
 | 25 km / 16 mi | ~33.3 km |
 
-Preset and miles/km choice persist across reboot (`planeradar` NVS namespace).
+Pick a preset either by tapping **BOOT** (cycles) or from the **Radar range** dropdown in the
+setup portal — both write the same setting. Preset and units persist across reboot
+(`planeradar` NVS namespace).
 
 ### Runways
 
@@ -98,7 +113,8 @@ Edit **`include/config.h`** for hardware and behavior:
 | Portal | `kPortalApName`, `kPortalIp`, `kPortalHostname` / `kPortalHostUrl` (mDNS; needs `-DWM_MDNS` in `platformio.ini`) |
 | Wi‑Fi timing | connect attempts, reconnect grace, portal timeout (`0` = no timeout) |
 | BOOT | `kBootPin`, `kBootResetHoldMs`, `kBootTapMinMs` |
-| Display SPI | pins, `kDisplayInvert`, `kDisplayRgbOrder`, `kDisplaySpiWriteHz` |
+| Display SPI | `PR_PIN_DISPLAY_*` pin defaults (per-board overrides in `platformio.ini`), `kDisplayInvert`, `kDisplayRgbOrder`, `kDisplaySpiWriteHz` |
+| Radar orientation | `kUpBearingDeg` in `include/ui/radar_projection.h` — true bearing drawn at the top (`0` = north up, `180` = south up). Rotates the plot only; text stays upright |
 | Default location | `kDefaultRadarLat`, `kDefaultRadarLon` (until portal overrides) |
 | ADS-B | `kAdsbFetchIntervalMs`, `kAdsbShowGroundAircraft` |
 
@@ -117,6 +133,7 @@ include/
     large_airports.h
   ui/
     radar_theme.h
+    radar_projection.h       — lat/lon → screen, and the south-up rotation
     radar_range.h
     radar_display.h
     runway_overlay.h
@@ -138,7 +155,12 @@ src/
   services/
 ```
 
-## Wiring (GC9A01 ↔ ESP32-C3 Super Mini)
+## Wiring
+
+Pins live in `include/config.h` as `PR_PIN_DISPLAY_*` macro defaults (Super Mini values); the
+`xiao_c3` env overrides them from `platformio.ini` build flags.
+
+### GC9A01 ↔ ESP32-C3 Super Mini (env `supermini`)
 
 | Display | ESP32-C3 |
 |---------|----------|
@@ -151,6 +173,29 @@ src/
 | SCL (SCLK) | GPIO **4** |
 | BOOT (user) | GPIO **9** |
 
+### GC9A01 ↔ Seeed XIAO ESP32C3 (env `xiao_c3`)
+
+The XIAO does **not** break out GPIO0 or GPIO1, so the display is remapped. Of the 11 pins it
+does expose, GPIO **2 / 8 / 9** are strapping pins and GPIO **20 / 21** are UART0 — leaving
+exactly six usable pins (3, 4, 5, 6, 7, 10) for the display's five signals.
+
+| Display | XIAO silk | GPIO |
+|---------|-----------|------|
+| VCC | 3V3 | — |
+| GND | GND | — |
+| RST | **D2** | 4 |
+| CS | **D10** | 10 |
+| DC | **D3** | 5 |
+| SDA (MOSI) | **D5** | 7 |
+| SCL (SCLK) | **D4** | 6 |
+| user button | onboard **B** | 9 |
+
+SCLK and MOSI sit on the ESP32-C3's SPI2 IOMUX pads (FSPICLK / FSPID), so the bus bypasses the
+GPIO matrix — which caps SPI master at 40 MHz. D1/GPIO3 is left free.
+
+> Don't be tempted by the XIAO's silkscreened **SCK** (D8/GPIO8): it's a strapping pin, and
+> driving it low at reset prevents the board from entering download mode.
+
 ## Build
 
 ```bash
@@ -158,9 +203,9 @@ pio run -t upload
 pio device monitor
 ```
 
-- PlatformIO env: **`supermini`**
+- PlatformIO envs: **`xiao_c3`** (default) and **`supermini`** — pick one with `-e <env>`
 - Serial: **115200** baud
-- USB CDC on boot enabled in `platformio.ini` for the Super Mini
+- USB CDC on boot enabled in `platformio.ini`; both boards have native USB
 
 ### Web-flashable release image
 
@@ -171,20 +216,24 @@ chmod +x scripts/merge-firmware.sh   # once
 ./scripts/merge-firmware.sh
 ```
 
-Writes `release/plane-radar-merged.bin`. Skip rebuild if firmware is already built:
+Writes `release/plane-radar-merged.bin` for the `xiao_c3` env. Pick a board with `--env`, and
+skip the rebuild if firmware is already built:
 
 ```bash
+./scripts/merge-firmware.sh --env supermini
 ./scripts/merge-firmware.sh --no-build
 ```
 
-Or via PlatformIO only (output: `.pio/build/supermini/firmware-merged.bin`):
+Or via PlatformIO only (output: `.pio/build/<env>/firmware-merged.bin`):
 
 ```bash
-pio run -e supermini
-pio run -t merge -e supermini
+pio run -e xiao_c3
+pio run -t merge -e xiao_c3
 ```
 
-Put the board in download mode (hold **BOOT**, tap **RESET**), then flash with Chrome/Edge over USB.
+Put the board in download mode, then flash with Chrome/Edge over USB — hold **BOOT** and tap
+**RESET** on the Super Mini, or hold **B** and tap **R** on the XIAO. Both boards flash over
+native USB Serial/JTAG, so this is usually unnecessary.
 
 ### CI and releases (GitHub Actions)
 
@@ -204,6 +253,6 @@ The release workflow builds firmware in CI and attaches the merged image to the 
 
 ## Dependencies
 
-- [LovyanGFX](https://github.com/lovyan03/LovyanGFX)
+- [LovyanGFX](https://github.com/lovyan03/LovyanGFX) — **≥ 1.2.26** (earlier versions lack the global `namespace fonts` this code relies on)
 - [WiFiManager](https://github.com/tzapu/WiFiManager)
 - [ArduinoJson](https://github.com/bblanchon/ArduinoJson)

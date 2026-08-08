@@ -32,6 +32,7 @@ void showRadarIfConnected() {
 
 void onRangeTap() {
   ui::radar::rangeNext();
+  wifiRefreshPortalFields();  // keep the portal dropdown in step with the button
   char range_label[12];
   ui::radar::formatCurrentRing3Label(range_label, sizeof(range_label));
   Serial.printf("Range: %s (outer ~%.0f km)\n", range_label,

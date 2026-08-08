@@ -77,12 +77,51 @@ WiFiManagerParameter s_param_lon("radar_lon", "Longitude (deg)", "0",
                                 kCoordParamLen, kCoordInputAttrs);
 
 char s_miles_checkbox_attrs[32] = "type=\"checkbox\"";
-WiFiManagerParameter s_param_miles("use_miles", "Display distances in miles", "T", 2,
+WiFiManagerParameter s_param_miles("use_miles",
+                                   "Imperial units (miles, feet)", "T", 2,
                                    s_miles_checkbox_attrs, WFM_LABEL_AFTER);
 
 char s_runways_checkbox_attrs[32] = "type=\"checkbox\"";
 WiFiManagerParameter s_param_runways("show_runways", "Show airport runways", "T", 2,
                                      s_runways_checkbox_attrs, WFM_LABEL_AFTER);
+
+// WiFiManager's input template only takes extra attributes, so the range
+// dropdown is injected as a raw-HTML parameter (id == NULL) and read back
+// straight off the web server in onPortalParamsSaved().
+constexpr char kRangeParamId[] = "radar_range";
+char s_range_select_html[512];
+WiFiManagerParameter s_param_range(s_range_select_html);
+
+/** Rebuild the <select>, marking the stored preset as selected. */
+void buildRangeSelectHtml() {
+  constexpr size_t kCap = sizeof(s_range_select_html);
+  size_t len = 0;
+
+  len += snprintf(s_range_select_html, kCap,
+                  "<label for='%s'>Radar range</label><br/>"
+                  "<select id='%s' name='%s'>",
+                  kRangeParamId, kRangeParamId, kRangeParamId);
+
+  for (size_t i = 0; i < ui::radar::kRangePresetCount; ++i) {
+    if (len >= kCap) {
+      break;
+    }
+    char km_label[12];
+    char mi_label[12];
+    const float ring3_km = ui::radar::kRangePresets[i].ring3_km;
+    ui::radar::formatRing3Label(km_label, sizeof(km_label), ring3_km, false);
+    ui::radar::formatRing3Label(mi_label, sizeof(mi_label), ring3_km, true);
+    len += snprintf(s_range_select_html + len, kCap - len,
+                    "<option value='%u'%s>%s / %s</option>",
+                    static_cast<unsigned>(i),
+                    (i == ui::radar::rangeIndex()) ? " selected" : "", km_label,
+                    mi_label);
+  }
+
+  if (len < kCap) {
+    snprintf(s_range_select_html + len, kCap - len, "</select>");
+  }
+}
 
 void refreshPortalParamDefaults() {
   char lat_buf[kCoordParamLen + 1];
@@ -97,6 +136,7 @@ void refreshPortalParamDefaults() {
   snprintf(s_runways_checkbox_attrs, sizeof(s_runways_checkbox_attrs),
            "type=\"checkbox\"%s", ui::radar::showRunways() ? " checked" : "");
   s_param_runways.setValue("T", 2);
+  buildRangeSelectHtml();
 }
 
 void onPortalParamsSaved() {
@@ -106,12 +146,17 @@ void onPortalParamsSaved() {
   }
   ui::radar::saveMilesFromPortal(s_param_miles.getValue());
   ui::radar::saveRunwaysFromPortal(s_param_runways.getValue());
+  // The dropdown has no WiFiManagerParameter storage of its own.
+  if (s_wm.server) {
+    ui::radar::saveRangeFromPortal(s_wm.server->arg(kRangeParamId).c_str());
+  }
 }
 
 void attachPortalParams(WiFiManager& wm) {
   refreshPortalParamDefaults();
   wm.addParameter(&s_param_lat);
   wm.addParameter(&s_param_lon);
+  wm.addParameter(&s_param_range);
   wm.addParameter(&s_param_miles);
   wm.addParameter(&s_param_runways);
   wm.setSaveParamsCallback(onPortalParamsSaved);
@@ -335,6 +380,7 @@ bool openConfigPortal() {
   WiFi.mode(WIFI_OFF);
   delay(50);
   statusScreenPortal();
+  refreshPortalParamDefaults();
   s_wm.setConfigPortalBlocking(false);
   s_wm.startConfigPortal(config::kPortalApName);
   while (s_wm.getConfigPortalActive()) {
@@ -429,6 +475,8 @@ void wifiLoop() {
     stopLanWebPortal();
   }
 }
+
+void wifiRefreshPortalFields() { refreshPortalParamDefaults(); }
 
 bool wifiSetupConnect() {
   initBootButton();

@@ -5,6 +5,7 @@
 #include <Preferences.h>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace ui::radar {
@@ -103,6 +104,27 @@ void saveRunwaysFromPortal(const char* checkbox_value) {
   s_show_runways = portalCheckboxChecked(checkbox_value);
   saveShowRunways();
   Serial.printf("Runway overlay: %s\n", s_show_runways ? "on" : "off");
+}
+
+void saveRangeFromPortal(const char* index_value) {
+  if (index_value == nullptr || index_value[0] == '\0') {
+    return;  // dropdown absent from the form — keep the current preset
+  }
+
+  char* end = nullptr;
+  const long idx = strtol(index_value, &end, 10);
+  if (end == index_value || *end != '\0' || idx < 0 ||
+      idx >= static_cast<long>(kRangePresetCount)) {
+    Serial.printf("Ignoring invalid portal range index: %s\n", index_value);
+    return;
+  }
+
+  s_range_index = static_cast<uint8_t>(idx);
+  saveRangeIndex();
+
+  char label[12];
+  formatCurrentRing3Label(label, sizeof(label));
+  Serial.printf("Radar range: %s\n", label);
 }
 
 void formatRing3Label(char* buf, size_t len, float ring3_km, bool use_miles) {
