@@ -16,7 +16,7 @@ Forked from [MatixYo/ESP32-Plane-Radar](https://github.com/MatixYo/ESP32-Plane-R
 | **South-up radar** | The plot is rotated so bearing 180° is at the top, with all text still upright. Driven by one constant, `kUpBearingDeg` in `include/ui/radar_projection.h` (`0` = north up). The projection math, previously duplicated between the radar and runway overlay, now lives in that shared module |
 | **Metric altitude** | Aircraft tags show `457 m` / `10.7 km` instead of raw feet. Follows the units checkbox, which is relabelled **Imperial units (miles, feet)** since it now governs both distance and altitude |
 | **Range selector in the web portal** | The four range presets are also pickable from a dropdown in the setup portal, not just by cycling the BOOT button. Both write the same NVS setting |
-| **Build fix: LovyanGFX ≥ 1.2.26** | Upstream's `namespace fonts = lgfx::v1::fonts;` aliases collide with the real global `namespace fonts` that LovyanGFX added after 1.2.7, so the floating `^1.2.7` range stopped compiling. Aliases removed and the dependency floor raised |
+| **Build fix: LovyanGFX ≥ 1.2.26** | The old `namespace fonts = lgfx::v1::fonts;` aliases collide with the real global `namespace fonts` that LovyanGFX added after 1.2.7, so the floating `^1.2.7` range stopped compiling. Upstream has since dropped the aliases too; this fork additionally raises the dependency floor to `^1.2.26`, since the code needs that global namespace to exist |
 
 ## What it does
 
