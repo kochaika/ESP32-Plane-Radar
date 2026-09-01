@@ -16,6 +16,7 @@ Forked from [MatixYo/ESP32-Plane-Radar](https://github.com/MatixYo/ESP32-Plane-R
 | **South-up radar** | The plot is rotated so bearing 180° is at the top, with all text still upright. Driven by one constant, `kUpBearingDeg` in `include/ui/radar_projection.h` (`0` = north up). The projection math, previously duplicated between the radar and runway overlay, now lives in that shared module |
 | **Metric altitude** | Aircraft tags show `457 m` / `10.7 km` instead of raw feet. Follows the units checkbox, which is relabelled **Imperial units (miles, feet)** since it now governs both distance and altitude |
 | **Range selector in the web portal** | The four range presets are also pickable from a dropdown in the setup portal, not just by cycling the BOOT button. Both write the same NVS setting |
+| **Origin–destination on the tag** | The second tag line shows the flight's route (`GOT-AMS`) instead of the ICAO aircraft type (`B738`), falling back to `N/A-N/A`. Toggled by **Show route instead of aircraft type** in the portal. adsb.fi carries no route data, so this adds a second source — see [ADS-B](#ads-b) |
 | **Build fix: LovyanGFX ≥ 1.2.26** | The old `namespace fonts = lgfx::v1::fonts;` aliases collide with the real global `namespace fonts` that LovyanGFX added after 1.2.7, so the floating `^1.2.7` range stopped compiling. Upstream has since dropped the aliases too; this fork additionally raises the dependency floor to `^1.2.26`, since the code needs that global namespace to exist |
 
 ## What it does
@@ -57,6 +58,7 @@ The same portal runs on the setup AP and on the device’s LAN IP while connecte
 | **Radar range** | Dropdown of the same four presets the BOOT tap cycles through; the stored one is preselected |
 | **Imperial units (miles, feet)** | Ring scale in **mi** instead of **km** (`6mi` vs `10km`), and aircraft altitude in **ft** instead of **m / km** (`35000 ft` vs `10.7 km`) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
+| **Show route instead of aircraft type** | Second tag line shows origin–destination (`GOT-AMS`) rather than the ICAO type (`B738`). On by default; `N/A-N/A` when the route is unknown |
 
 After a reset, the device reboots and shows the setup screen immediately (no “Connecting” loop on stale credentials).
 
@@ -101,8 +103,18 @@ As range decreases (or aircraft approach), targets move inward; beyond-ring dots
 
 - Source: `https://opendata.adsb.fi/api/v3/`
 - Fetch radius: `ui::radar::fetchRadiusKm()` — scales with the active preset to roughly the screen edge (so rim dots have data)
-- Poll interval: `kAdsbFetchIntervalMs` (5 s) in `config.h`
+- Poll interval: `kAdsbFetchIntervalMs` (3 s) in `config.h`
 - Ground aircraft hidden by default (`kAdsbShowGroundAircraft`)
+
+### Routes
+
+adsb.fi carries no origin/destination, so **Show route instead of aircraft type** adds a second source: `http://adsb.im/api/0/routeset` (`src/services/route_lookup.cpp`), the same provider tar1090 uses by default. Plain HTTP is deliberate — tar1090 asks clients to prefer it for this host, and it avoids a TLS context on top of the 115 KB frame sprite.
+
+- Runs only after the adsb.fi fetch has fully returned, so the two never hold memory at once
+- Batched: up to 12 callsigns per POST, response streamed through an ArduinoJson filter that keeps two fields, so an ~8 KB reply costs ~2 KB of RAM
+- Cached in `.bss` for 6 h; **unknown** routes cached 30 min and transport failures 60 s, so steady state makes **zero** requests. Aircraft with no flight ident (ICAO hex only) are never queried at all
+- Throttled to one request per 3.5 s. A dead route API degrades to `N/A-N/A` without slowing the radar
+- `?` suffix (`LGW-DUB?`) marks a route the provider guessed from the callsign but couldn't reconcile with the aircraft's position
 
 ## Configuration
 

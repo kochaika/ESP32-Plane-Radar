@@ -356,6 +356,11 @@ void applyTagStyle() {
   }
 }
 
+/** Line 2 of the tag: origin-destination route, or the ICAO aircraft type. */
+const char* tagSecondLine(const services::adsb::Aircraft& plane) {
+  return radar::showRoutes() ? plane.route : plane.type;
+}
+
 int measureTagBlockWidth(const services::adsb::Aircraft& plane) {
   applyTagStyle();
   int max_w = 0;
@@ -365,8 +370,9 @@ int measureTagBlockWidth(const services::adsb::Aircraft& plane) {
       max_w = w;
     }
   }
-  if (plane.type[0] != '\0') {
-    const int w = s_draw->textWidth(plane.type);
+  const char* line2 = tagSecondLine(plane);
+  if (line2[0] != '\0') {
+    const int w = s_draw->textWidth(line2);
     if (w > max_w) {
       max_w = w;
     }
@@ -411,9 +417,10 @@ void drawAircraftTag(int x, int y, const services::adsb::Aircraft& plane) {
   }
   ly += line_h;
 
-  if (plane.type[0] != '\0') {
+  const char* line2 = tagSecondLine(plane);
+  if (line2[0] != '\0') {
     s_draw->setTextColor(radar::kColorTagType, radar::kColorBackground);
-    s_draw->drawString(plane.type, anchor_x, ly);
+    s_draw->drawString(line2, anchor_x, ly);
   }
   ly += line_h;
 

@@ -204,13 +204,18 @@ void formatAltitudeTag(const JsonObject& plane, char* out, size_t out_len) {
 }
 
 void fillTagFields(Aircraft* ac, const JsonObject& plane) {
+  ac->src_flags = 0;
   copyJsonStringTrimmed(plane, "flight", ac->callsign, sizeof(ac->callsign));
   if (ac->callsign[0] == '\0') {
     copyJsonStringTrimmed(plane, "hex", ac->callsign, sizeof(ac->callsign));
+    // Uppercased, a hex address looks like a valid callsign, so the distinction
+    // can't be recovered later — and querying it would waste a route lookup.
+    ac->src_flags |= kFlagCallsignIsHex;
   }
 
   copyJsonStringTrimmed(plane, "t", ac->type, sizeof(ac->type));
   formatAltitudeTag(plane, ac->alt, sizeof(ac->alt));
+  ac->route[0] = '\0';  // services::routes fills this in
 }
 
 }  // namespace
@@ -220,6 +225,8 @@ void setPollFn(PollFn fn) { s_poll_fn = fn; }
 size_t aircraftCount() { return s_aircraft_count; }
 
 const Aircraft* aircraftList() { return s_aircraft; }
+
+Aircraft* aircraftListMutable() { return s_aircraft; }
 
 bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   const float dist_nm = kmToNauticalMiles(fetch_radius_km);

@@ -9,6 +9,7 @@
 #include "hardware/display.h"
 #include "services/adsb_client.h"
 #include "services/radar_location.h"
+#include "services/route_lookup.h"
 #include "services/wifi_setup.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
@@ -57,7 +58,20 @@ void fetchAndDrawAircraft() {
     handleBootButton();
     return;
   }
-  ui::radarDisplayRefreshAircraft();
+
+  // fetchUpdate() has returned, so its WiFiClientSecure (and the mbedTLS
+  // buffers behind it), its payload String and its JsonDocument are all gone.
+  // Only now is it safe to open a second socket — the peaks must not overlap.
+  services::adsb::Aircraft* planes = services::adsb::aircraftListMutable();
+  const size_t count = services::adsb::aircraftCount();
+
+  services::routes::annotateFromCache(planes, count);
+  ui::radarDisplayRefreshAircraft();  // positions up first; routes are static
+  handleBootButton();
+
+  if (services::routes::resolvePending(planes, count)) {
+    ui::radarDisplayRefreshAircraft();  // only when a route actually changed
+  }
   handleBootButton();
 }
 
@@ -77,6 +91,7 @@ void setup() {
   services::location::init();
   ui::radar::rangeInit();
   services::adsb::setPollFn(wifiLoop);
+  services::routes::setPollFn(wifiLoop);
 
   if (wifiSetupConnect()) {
     showRadarIfConnected();

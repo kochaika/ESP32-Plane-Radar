@@ -45,9 +45,12 @@ float fetchRadiusKm();
 
 bool useMiles();
 bool showRunways();
+/** Tag line 2: true = origin-destination route, false = ICAO aircraft type. */
+bool showRoutes();
 /** WiFi portal checkbox: "T" = miles, otherwise km. */
 void saveMilesFromPortal(const char* checkbox_value);
 void saveRunwaysFromPortal(const char* checkbox_value);
+void saveRoutesFromPortal(const char* checkbox_value);
 /** WiFi portal dropdown: value is an index into kRangePresets. Ignored if invalid. */
 void saveRangeFromPortal(const char* index_value);
 void formatRing3Label(char* buf, size_t len, float ring3_km, bool use_miles);

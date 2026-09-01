@@ -86,6 +86,11 @@ char s_runways_checkbox_attrs[32] = "type=\"checkbox\"";
 WiFiManagerParameter s_param_runways("show_runways", "Show airport runways", "T", 2,
                                      s_runways_checkbox_attrs, WFM_LABEL_AFTER);
 
+char s_routes_checkbox_attrs[32] = "type=\"checkbox\"";
+WiFiManagerParameter s_param_routes("show_routes",
+                                    "Show route instead of aircraft type", "T", 2,
+                                    s_routes_checkbox_attrs, WFM_LABEL_AFTER);
+
 // WiFiManager's input template only takes extra attributes, so the range
 // dropdown is injected as a raw-HTML parameter (id == NULL) and read back
 // straight off the web server in onPortalParamsSaved().
@@ -137,6 +142,9 @@ void refreshPortalParamDefaults() {
   snprintf(s_runways_checkbox_attrs, sizeof(s_runways_checkbox_attrs),
            "type=\"checkbox\"%s", ui::radar::showRunways() ? " checked" : "");
   s_param_runways.setValue("T", 2);
+  snprintf(s_routes_checkbox_attrs, sizeof(s_routes_checkbox_attrs),
+           "type=\"checkbox\"%s", ui::radar::showRoutes() ? " checked" : "");
+  s_param_routes.setValue("T", 2);
   buildRangeSelectHtml();
 }
 
@@ -147,6 +155,7 @@ void onPortalParamsSaved() {
   }
   ui::radar::saveMilesFromPortal(s_param_miles.getValue());
   ui::radar::saveRunwaysFromPortal(s_param_runways.getValue());
+  ui::radar::saveRoutesFromPortal(s_param_routes.getValue());
   // The dropdown has no WiFiManagerParameter storage of its own.
   if (s_wm.server) {
     ui::radar::saveRangeFromPortal(s_wm.server->arg(kRangeParamId).c_str());
@@ -160,6 +169,7 @@ void attachPortalParams(WiFiManager& wm) {
   wm.addParameter(&s_param_range);
   wm.addParameter(&s_param_miles);
   wm.addParameter(&s_param_runways);
+  wm.addParameter(&s_param_routes);
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
 
